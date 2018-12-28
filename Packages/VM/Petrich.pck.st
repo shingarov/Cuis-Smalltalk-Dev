@@ -1,6 +1,6 @@
-'From Cuis 5.0 of 7 November 2016 [latest update: #3543] on 27 December 2018 at 6:00:39 pm'!
+'From Cuis 5.0 of 7 November 2016 [latest update: #3543] on 28 December 2018 at 12:17:25 pm'!
 'Description The Target-Agnostic Binutils-in-Smalltalk.'!
-!provides: 'Petrich' 1 13!
+!provides: 'Petrich' 1 23!
 !requires: 'PetitParser' 1 1 nil!
 SystemOrganization addCategory: #'Petrich-Core'!
 SystemOrganization addCategory: #'Petrich-Parsing'!
@@ -8,6 +8,16 @@ SystemOrganization addCategory: #'Petrich-DUI'!
 SystemOrganization addCategory: #'Petrich-Tests'!
 SystemOrganization addCategory: #'Petrich-Pig'!
 
+
+!classDefinition: #FieldNotFound category: #'Petrich-Core'!
+Exception subclass: #FieldNotFound
+	instanceVariableNames: ''
+	classVariableNames: ''
+	poolDictionaries: ''
+	category: 'Petrich-Core'!
+!classDefinition: 'FieldNotFound class' category: #'Petrich-Core'!
+FieldNotFound class
+	instanceVariableNames: ''!
 
 !classDefinition: #AcDisassemblyTest category: #'Petrich-Tests'!
 TestCase subclass: #AcDisassemblyTest
@@ -2333,13 +2343,13 @@ example1
 	MatchedParenTestParser new parse: 'asdf)'
 ! !
 
-!AcMnemonicFormatParser methodsFor: 'grammar'!
+!AcMnemonicFormatParser methodsFor: 'grammar' stamp: 'bgs 12/28/2018 11:55:33'!
 imm
 	^ '%imm' asParser / '%exp' asParser / '%addr' asParser ==> [ :immToken |
-		[ :operands :stream |
+		[ :operands :stream | | stringRepr |
 			stream nextPutAll: '0x'.
-			operands removeFirst printOn: stream base: 16 showRadix: false]]
-! !
+			stringRepr _ operands removeFirst printStringHex.
+			stream nextPutAll: stringRepr ]]! !
 
 !AcMnemonicFormatParser methodsFor: 'grammar'!
 percentId
@@ -2396,17 +2406,15 @@ constraintConstant
 			yourself ]
 ! !
 
-!AcMnemonicParser methodsFor: 'grammar'!
+!AcMnemonicParser methodsFor: 'grammar' stamp: 'bgs 12/28/2018 11:06:42'!
 constraintMap
         ^id, $= asParser, id, '.map_to("' asParser, id, '")' asParser 
         ==> [  :x | 
                 | map c |
                 map := self class maps at: x third.
-                Smalltalk isSmalltalkX ifTrue: [
-                    c := map keyAtEqualValue: x fifth ifAbsent: [ self error ]
-                ] ifFalse: [
-                    c := map keyAtValue: x fifth ifAbsent: [ self error ]
-                ].
+
+                    c := map keyAtValue: x fifth ifAbsent: [ self error ].
+                
                 AcMnemonicConstraintConstant  new
                         op: (x first);
                         c: c;
@@ -2902,7 +2910,7 @@ removeFirst
 	self bitFields: self bitFields allButFirst 
 ! !
 
-!AcInstructionFormat methodsFor: 'accessing'!
+!AcInstructionFormat methodsFor: 'accessing' stamp: 'bgs 12/28/2018 10:30:03'!
 widthOf: fieldName
 	" Answer the width of the field, negated if the field
 	  is a two's complement-encoded signed.
@@ -2914,7 +2922,7 @@ widthOf: fieldName
 	self bitFields do: [ :assoc |
 		assoc key = fieldName ifTrue: [ ^assoc value ]
 	].
-	KeyNotFound signalFor: fieldName
+	FieldNotFound signalFor: fieldName
 ! !
 
 !AcInstructionFormat methodsFor: 'emitting'!
@@ -3928,17 +3936,17 @@ decode: anInteger
 	
 ! !
 
-!ProcessorInstruction methodsFor: 'emitting'!
+!ProcessorInstruction methodsFor: 'emitting' stamp: 'bgs 12/28/2018 12:12:09'!
 arithmeticValueOf: operandName
 	(operandName isKindOf: Integer) ifTrue: [ ^operandName ].
-	^internalBindings at: operandName
+	^internalBindings at: operandName ifAbsent: [FieldNotFound signal]
 ! !
 
-!ProcessorInstruction methodsFor: 'emitting'!
+!ProcessorInstruction methodsFor: 'emitting' stamp: 'bgs 12/28/2018 11:59:35'!
 emit
 	" Emit the instruction as a binary string of ascii ones and zeros. "
 	| currentFormat |
-	currentFormat := self format deepCopy.
+	currentFormat := self format copy.
 	^self format bitFields inject: '' into: [ :soFar :field |
 		| s |
 		s := self stringValueOf: field key usingFormat: currentFormat.
@@ -3957,15 +3965,15 @@ encodedValueOf: fieldName width: encodedWidth
 		ifFalse: [ operandValue encodeUnsignedWidth: absWidth ].
 ! !
 
-!ProcessorInstruction methodsFor: 'emitting'!
+!ProcessorInstruction methodsFor: 'emitting' stamp: 'bgs 12/28/2018 12:07:08'!
 stringValueOf: fieldName usingFormat: f
         | encodedWidth operandValue |
         encodedWidth := f widthOf: fieldName.
         "if we got here, the field exists, whether external or internal"
                 
         [ operandValue := self encodedValueOf: fieldName width: encodedWidth ]
-                on: KeyNotFoundError do: [ ^String streamContents:[ :s | s next: encodedWidth abs put: $?] ].
-        ^operandValue printStringRadix: 2 size: encodedWidth abs fill: $0
+                on: FieldNotFound do: [ ^String streamContents:[ :s | s next: encodedWidth abs put: $?] ].
+        ^operandValue printStringBase: 2 length: encodedWidth abs padded: true
 
     "Modified: / 04-10-2018 / 12:52:30 / boris"
 ! !
@@ -4056,7 +4064,7 @@ hash
 	^self emit hash
 ! !
 
-!GroundedProcessorInstruction methodsFor: 'disassembly'!
+!GroundedProcessorInstruction methodsFor: 'disassembly' stamp: 'bgs 12/28/2018 10:58:28'!
 decode: anInteger accordingTo: bitfieldAssociationSequence
         "This unfortunate method factorization is forced by an opportunity for improvement in the Pharo debugger.
         Modify thyself according to the bitfieldAssociationSequence specification whose values are either
@@ -4068,20 +4076,17 @@ decode: anInteger accordingTo: bitfieldAssociationSequence
         width := firstBitfield value abs.
         value := anInteger >> (32 - width).
         fieldName := firstBitfield key.
-        [(internalBindings at: fieldName) = value ifFalse: [^nil]]
-                on: KeyNotFoundError
-                do: [ :ex | externalBindings at: fieldName put: value ].
+        (internalBindings at: fieldName ifAbsent: [ externalBindings at: fieldName put: value ] ) = value ifFalse: [^nil].
+
         ^self
                 decode: (anInteger << width bitAnd: 16rFFFFFFFF)
-                accordingTo: (bitfieldAssociationSequence copyFrom: 2 to: bitfieldAssociationSequence size).
+                accordingTo: (bitfieldAssociationSequence copyFrom: 2 to: bitfieldAssociationSequence size)! !
 
-    "Modified: / 06-10-2018 / 08:42:18 / boris"
-! !
-
-!GroundedProcessorInstruction methodsFor: 'disassembly'!
+!GroundedProcessorInstruction methodsFor: 'disassembly' stamp: 'bgs 12/28/2018 11:57:38'!
 disassemble
         | variants |
-        variants := mnemonics collect: [ :mnem |
+        variants := mnemonics asOrderedCollection "because mnemonics is a Set and sets cannot meaningfully contain nil as an element"
+		 collect: [ :mnem |
                 mnem disassembleEnv: externalBindings ].
         variants := variants reject: [ :v | v isNil ].
         variants := variants asSortedCollection: [ :a :b | a value > b value ].
@@ -4105,13 +4110,13 @@ arithmeticValueOf: operandName
 	^internalBindings at: operandName ifAbsent: [ 	externalBindings at: operandName ]
 ! !
 
-!GroundedProcessorInstruction methodsFor: 'emitting'!
+!GroundedProcessorInstruction methodsFor: 'emitting' stamp: 'bgs 12/28/2018 12:09:53'!
 emit32
 	" Emit the instruction as a 32-bit integer. "
 	| s |
 	s := self emit.
 	s size = 32 ifFalse: [ self error: 'Instruction size not 32' ].
-	^Integer readFrom: s base: 2
+	^Integer readFrom: s readStream base: 2
 ! !
 
 !GroundedProcessorInstruction methodsFor: 'initializing'!
@@ -4132,13 +4137,15 @@ initializeFrom: anInstruction
 	^self
 ! !
 
-!GroundedProcessorInstruction methodsFor: 'printing'!
+!GroundedProcessorInstruction methodsFor: 'printing' stamp: 'bgs 12/28/2018 11:41:45'!
 printOn: aStream
+aStream nextPutAll: self disassemble.
+"
 	[ aStream nextPutAll: self disassemble ]
 		on: Error
 		do: [ aStream nextPutAll: 'a GroundedProcessorInstruction [error disassembling]' ]
 	
-! !
+"! !
 
 !GroundedProcessorInstruction class methodsFor: 'documentation'!
 version_HG
@@ -4935,6 +4942,182 @@ version_HG
     ^ '$Changeset: <not expanded> $'
 ! !
 
+!Object methodsFor: '*petrich-core-extensions' stamp: 'bgs 12/28/2018 11:19:25'!
+split: aSequenceableCollection
+	| result |
+	
+	result _ OrderedCollection new: (aSequenceableCollection size / 2) asInteger.
+	self split: aSequenceableCollection 
+		do: [ :item | result add: item ].
+	^ result! !
+
+!Object methodsFor: '*petrich-core-extensions' stamp: 'bgs 12/28/2018 11:21:29'!
+split: aSequenceableCollection do: aBlock
+	self split: aSequenceableCollection indicesDo: [ :start :end | 
+		aBlock value: (aSequenceableCollection copyFrom: start to: end) ]! !
+
+!Object methodsFor: '*petrich-core-extensions' stamp: 'bgs 12/28/2018 11:22:13'!
+split: aSequenceableCollection indicesDo: aBlock
+	"optimized version for single delimiters:
+	Example:
+		$/ split: '/foo/bar' indicesDo: [ :start :end | ]"
+		
+	|  position oldPosition |
+	
+	position := 1.
+	oldPosition := position.
+	
+	position := aSequenceableCollection indexOf: self startingAt: position.
+	[ position > 0 ] whileTrue: [
+		aBlock value: oldPosition value: position - 1.
+		position := position + 1.
+		oldPosition := position.
+		position := aSequenceableCollection indexOf: self startingAt: position.
+	].
+
+	aBlock value: oldPosition value: aSequenceableCollection size.
+! !
+
+!Integer methodsFor: '*petrich-core-extensions' stamp: 'bgs 12/28/2018 10:49:43'!
+decodeSignedWidth: w
+	"
+	For example, 16rFFFF encodeUnsignedAsSignedWidth: 16 is -1.
+	"
+	self < (1 bitShift: w) ifFalse: [self error].
+	self < (1 bitShift: w - 1)
+		ifTrue: ["positive"
+		^self]
+		ifFalse: ["negative"
+		^self - (1 bitShift: w)]! !
+
+!Integer methodsFor: '*petrich-core-extensions' stamp: 'bgs 12/28/2018 10:50:39'!
+encodeSignedWidth: w
+	self positive
+		ifTrue: [
+			self < (1 bitShift: w - 1) ifFalse: [self error].
+			^self]
+		ifFalse: [
+			self abs <= (1 bitShift: w - 1) ifFalse: [self error].
+			^(Integer binaryOnes: w) - (self abs - 1)]! !
+
+!Integer methodsFor: '*petrich-core-extensions' stamp: 'bgs 12/28/2018 10:51:32'!
+encodeUnsignedWidth: w
+	self < (1 bitShift: w) ifFalse: [self error].
+	^self! !
+
+!Integer methodsFor: '*petrich-core-extensions' stamp: 'bgs 12/28/2018 11:47:44'!
+printOn:aStream base:base showRadix:showRadix
+    "append a string representation of the receiver in the specified numberBase to aStream
+     (if showRadix is true, with initial XXr)
+     The base argument should be between 2 and 36.
+     If it is negative, digits > 9 are printed as lowecase a-z."
+
+    |absBase num s divMod mod r r2 r4 nD numN string|
+
+    (base isInteger and:[absBase := base abs. absBase between:2 and:36]) ifFalse:[
+        self error: 'Invalid base'.
+        absBase := 10.
+    ].
+
+    showRadix ifTrue:[
+        absBase printOn:aStream.
+        aStream nextPut:$r.
+    ].
+
+    (self = 0) ifTrue:[aStream nextPut:$0. ^ self].
+    self negative ifTrue:[
+        aStream nextPut:$- .
+        num := self negated.
+    ] ifFalse:[
+        num := self.
+    ].
+
+    r2 := absBase*absBase.   "/ radix^2"
+    r4 := r2*r2.        "/ radix^4"
+    absBase <= 10 ifTrue:[
+        r := r4*r2.     "/ radix^6 (chunks of 6 digits)"
+        nD := 6.
+    ] ifFalse:[
+        r := r4*absBase.    "/ radix^5 (chunks of 5 digits)"
+        nD := 5.
+    ].
+    SmallInteger maxBits >= 63 ifTrue:[
+        r := r*r2.    "/ radix^7 (chunks of 6 digits)"
+        nD := nD + 2.
+    ].
+
+    "get a Stream with space for the digits we are going to print.
+     We need ((num log:base) ceiling) digits, which is equivalent
+     to ((num log:2)/(base log:2) ceiling)
+    "
+    s := WriteStream on:(String new:10).
+
+    [num >= r] whileTrue:[
+       
+        "/ chop off nD digits."
+        
+        divMod := num divMod:r.
+        num := divMod at:1.
+        numN := divMod at:2.
+
+        "/ process them"
+        nD timesRepeat:[
+            divMod := numN divMod:absBase.
+            numN := divMod at:1.
+            mod := divMod at:2.
+            s nextPut:(Character digitValue:mod).
+        ].
+    ].
+
+    [num ~~ 0] whileTrue:[
+        divMod := num divMod:absBase.
+        num := divMod at:1.
+        mod := divMod at:2.
+        s nextPut:(Character digitValue:mod).
+    ].
+    string := s contents reverse.
+    base < 0 ifTrue:[
+        string := string asLowercase.
+    ].
+    aStream nextPutAll:string.
+
+    "
+        3000 factorial printOn:Transcript base:10
+        10 printOn:Transcript base:3
+        31 printOn:Transcript base:3
+        10 printOn:Transcript base:2
+        31 printOn:Transcript base:2
+        -28  printOn:Transcript base:16
+        -28  printOn:Transcript base:-16
+        -20  printOn:Transcript base:10
+        Time millisecondsToRun:[10000 factorial printString]
+        '%012d' printf:{  (2 raisedTo:20) }
+    "
+
+    "Modified: / 20-01-1998 / 18:05:02 / stefan"
+    "Created: / 07-09-2001 / 13:51:33 / cg"
+    "Modified: / 02-08-2010 / 12:24:14 / cg"
+    "Modified (comment): / 28-12-2015 / 08:23:45 / Jan Vrany <jan.vrany@fit.cvut.cz>"
+! !
+
+!Integer methodsFor: '*petrich-core-extensions' stamp: 'bgs 12/28/2018 10:51:59'!
+swapEndian
+	| hex |
+	hex := self printStringBase: 16 length: 8 padded: true.
+	^Integer readFrom: (hex copyFrom: 7 to: 8),
+	(hex copyFrom: 5 to: 6),
+	(hex copyFrom: 3 to: 4),
+	(hex copyFrom: 1 to: 2)
+	base: 16
+! !
+
+!Integer class methodsFor: '*petrich-core-extensions' stamp: 'bgs 12/28/2018 10:54:07'!
+binaryOnes: n
+	" Make a positive integer of n ones,
+	e.g. Integer binaryOnes: 4 is 2r1111.
+	"
+	^1 << n - 1! !
+
 !Collection methodsFor: '*petrich-core-extensions' stamp: 'bgs 12/27/2018 17:48:45'!
 doWithIndex:aBlock
     "Squeak/V'Age compatibility; 
@@ -4950,6 +5133,16 @@ concatenateAll
     self isEmpty ifTrue: [self error]. "We don't know the class of elements."
     ^ self allButFirst inject: self first into: [ :soFar :current | soFar, current ].
 ! !
+
+!SequenceableCollection methodsFor: '*petrich-core-extensions' stamp: 'bgs 12/28/2018 11:24:17'!
+splitBy:anElement
+    "return a collection containing the subcollections (separated by anElement)
+     of the receiver. If anElement occurs multiple times in a row,
+     the result will contain empty collections.
+     This algorithm uses equality-compare to detect the element.
+     Same as asCollectionOfSubCollectionsSeparatedBy: for Squeak compatibility"
+
+    ^ anElement split: self! !
 
 !Dictionary class methodsFor: '*petrich-core-extensions'!
 newFromAssociations: anArray 
