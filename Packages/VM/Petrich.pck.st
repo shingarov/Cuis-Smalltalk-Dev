@@ -1,6 +1,6 @@
-'From Cuis 5.0 of 7 November 2016 [latest update: #3543] on 28 December 2018 at 12:17:25 pm'!
+'From Cuis 5.0 of 7 November 2016 [latest update: #3543] on 28 December 2018 at 3:23:49 pm'!
 'Description The Target-Agnostic Binutils-in-Smalltalk.'!
-!provides: 'Petrich' 1 23!
+!provides: 'Petrich' 1 24!
 !requires: 'PetitParser' 1 1 nil!
 SystemOrganization addCategory: #'Petrich-Core'!
 SystemOrganization addCategory: #'Petrich-Parsing'!
@@ -2925,17 +2925,15 @@ widthOf: fieldName
 	FieldNotFound signalFor: fieldName
 ! !
 
-!AcInstructionFormat methodsFor: 'emitting'!
+!AcInstructionFormat methodsFor: 'emitting' stamp: 'bgs 12/28/2018 15:22:46'!
 emit
         | fieldName s |
         ^self bitFields inject: '' into: [ :soFar :field |
                 fieldName := field key.
                 s := fieldName isInteger
-                        ifTrue: [ fieldName printStringRadix: 2 size: field value fill: $0 ]
+                        ifTrue: [ fieldName printStringBase: 2 length: field value padded: true ]
                         ifFalse: [ String streamContents: [:stream | stream next: field value abs put: $# ] ].
                 soFar, s ]
-
-    "Modified: / 04-10-2018 / 12:46:44 / boris"
 ! !
 
 !AcInstructionFormat methodsFor: 'instruction encoding'!
